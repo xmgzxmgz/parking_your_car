@@ -52,6 +52,7 @@ android {
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.09.00"))
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-text")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
@@ -67,4 +68,10 @@ dependencies {
 
     // Coil for image loading in Compose (optional but helpful)
     implementation("io.coil-kt:coil-compose:2.7.0")
+
+    // Material Components for XML themes (Theme.Material3.*)
+    implementation("com.google.android.material:material:1.12.0")
+
+    // Coroutines Tasks await() for Play Services
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 }

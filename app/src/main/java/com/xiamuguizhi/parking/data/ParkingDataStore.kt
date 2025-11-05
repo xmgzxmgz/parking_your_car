@@ -2,6 +2,7 @@ package com.xiamuguizhi.parking.data
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -86,7 +87,7 @@ class ParkingDataStore(private val context: Context) {
         timestamp: Long,
         photoUris: List<String>? = null
     ) {
-        context.parkingDataStore.edit { prefs: Preferences ->
+        context.parkingDataStore.edit { prefs: MutablePreferences ->
             prefs[KEY_LAT] = lat
             prefs[KEY_LON] = lon
             prefs[KEY_FLOOR] = floor ?: ""
@@ -104,7 +105,7 @@ class ParkingDataStore(private val context: Context) {
      * @param uri 新增照片的 Uri 字符串
      */
     suspend fun appendPhoto(uri: String) {
-        context.parkingDataStore.edit { prefs ->
+        context.parkingDataStore.edit { prefs: MutablePreferences ->
             val photosJson = prefs[KEY_PHOTOS]
             val list = photosJson?.takeIf { it.isNotBlank() }?.split("|::|")?.toMutableList() ?: mutableListOf()
             list.add(uri)
@@ -116,7 +117,7 @@ class ParkingDataStore(private val context: Context) {
      * 清除当前停车记录
      */
     suspend fun clear() {
-        context.parkingDataStore.edit { prefs ->
+        context.parkingDataStore.edit { prefs: MutablePreferences ->
             prefs.clear()
         }
     }
