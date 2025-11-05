@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">停车定位</string>
+    <string name="mark_parking">标记停车位</string>
+    <string name="i_am_in_car">我已上车</string>
+    <string name="floor_label">楼层</string>
+    <string name="spot_label">车位号</string>
+    <string name="add_photo">添加照片</string>
+    <string name="take_photo">拍摄照片</string>
+    <string name="clear_record">清除记录</string>
+    <string name="location_unavailable">定位不可用</string>
+    <string name="saved_at">记录时间</string>
+    <string name="latitude">纬度</string>
+    <string name="longitude">经度</string>
+    <string name="address">地址</string>
+</resources>
