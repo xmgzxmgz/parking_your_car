@@ -47,8 +47,16 @@ import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.events.MapEventsReceiver
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
+import org.osmdroid.util.MapTileIndex
 import androidx.compose.ui.viewinterop.AndroidView
 import android.location.Location
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.Alignment.Companion.Center
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.graphicsLayer
 
 /**
  * MainActivity
@@ -180,20 +188,28 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = { Text(text = "停车定位") },
-                // 移除左上角“我已上车”
+                navigationIcon = {
+                    if (record != null) {
+                        TextButton(onClick = clearRecord) { Text(text = "我已上车") }
+                    }
+                }
             )
         }
     ) { padding ->
-        Column(
+        // 全局状态：当前定位，供列表中多个项使用
+        val currentLocationState = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+        val context = LocalContext.current
+
+        // 使用 LazyColumn 防止可能的视图重叠，并提供更好的滚动体验
+        androidx.compose.foundation.lazy.LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            item {
             // 顶部展示地图
-            val currentLocationState = remember { mutableStateOf<Pair<Double, Double>?>(null) }
-            val context = LocalContext.current
             LaunchedEffect(Unit) {
                 // 配置 osmdroid UserAgent
                 Configuration.getInstance().userAgentValue = context.packageName
@@ -221,7 +237,8 @@ fun MainScreen(
                     }
                 }
             )
-
+            }
+            item {
             if (record == null) {
                 var floor by remember { mutableStateOf<String?>(null) }
                 var spot by remember { mutableStateOf<String?>(null) }
@@ -275,19 +292,27 @@ fun MainScreen(
                             )
                         }
                     }
+                    // 全屏无边框预览，点击退出，支持简单缩放
                     if (previewUri != null) {
-                        AlertDialog(
-                            onDismissRequest = { previewUri = null },
-                            confirmButton = { TextButton(onClick = { previewUri = null }) { Text("关闭") } },
-                            text = {
-                                Image(
-                                    painter = rememberAsyncImagePainter(model = previewUri),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxWidth().height(300.dp),
-                                    contentScale = ContentScale.Fit
-                                )
-                            }
-                        )
+                        val scale = remember { mutableStateOf(1f) }
+                        val state = rememberTransformableState { zoomChange, _, _ ->
+                            scale.value = (scale.value * zoomChange).coerceIn(1f, 5f)
+                        }
+                        Box(
+                            modifier = Modifier.fillMaxSize().clickable { previewUri = null },
+                            contentAlignment = Center
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black).clickable { previewUri = null }) {}
+                            Image(
+                                painter = rememberAsyncImagePainter(model = previewUri),
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .transformable(state)
+                                    .graphicsLayer(scaleX = scale.value, scaleY = scale.value),
+                                contentScale = ContentScale.Fit
+                            )
+                        }
                     }
                 }
 
@@ -305,6 +330,7 @@ fun MainScreen(
                 Button(onClick = { clearRecord() }, modifier = Modifier.fillMaxWidth()) {
                     Text("我已上车（清除记录）")
                 }
+            }
             }
         }
     }
@@ -384,7 +410,20 @@ fun ParkingMap(
         factory = { ctx ->
             val map = MapView(ctx)
             Configuration.getInstance().userAgentValue = ctx.packageName
-            map.setTileSource(TileSourceFactory.MAPNIK)
+            // 使用国内可访问的高德地图瓦片源（公开可访问端点）
+            val amap = object : OnlineTileSourceBase(
+                "AMAP",
+                0, 19, 256, "",
+                arrayOf("https://webrd02.is.autonavi.com/appmaptile")
+            ) {
+                override fun getTileURLString(pMapTileIndex: Long): String {
+                    val x = MapTileIndex.getX(pMapTileIndex)
+                    val y = MapTileIndex.getY(pMapTileIndex)
+                    val z = MapTileIndex.getZoom(pMapTileIndex)
+                    return "$baseUrl?lang=zh_cn&size=1&style=7&x=$x&y=$y&z=$z"
+                }
+            }
+            map.setTileSource(amap)
             map.controller.setZoom(17.0)
 
             // 事件接收：长按设置停车位置
