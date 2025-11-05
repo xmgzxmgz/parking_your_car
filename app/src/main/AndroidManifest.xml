@@ -3,13 +3,9 @@
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- 可选：后台定位（如需导航或持续定位） -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <application
         android:allowBackup="true"
@@ -21,8 +17,6 @@
         <meta-data
             android:name="com.amap.api.v2.apikey"
             android:value="${amap_api_key}" />
-
-        <!-- 高德定位 SDK 在新版本无需额外服务声明，保留默认配置即可 -->
 
         <provider
             android:name="androidx.core.content.FileProvider"

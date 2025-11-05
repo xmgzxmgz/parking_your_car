@@ -76,13 +76,22 @@ dependencies {
     // DataStore for persistent storage
     implementation("androidx.datastore:datastore-preferences:1.1.1")
 
-    // Coil for image loading in Compose（图片加载）
+    // Google Play Services Location for fused location provider
+    implementation("com.google.android.gms:play-services-location:21.3.0")
+
+    // Coil for image loading in Compose (optional but helpful)
     implementation("io.coil-kt:coil-compose:2.7.0")
 
     // Material Components for XML themes (Theme.Material3.*)
     implementation("com.google.android.material:material:1.12.0")
 
-    // 高德官方 3D 地图 SDK（中国大陆）
+    // Coroutines Tasks await() for Play Services
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    // OpenStreetMap (osmdroid) 地图，无需 API Key
+    implementation("org.osmdroid:osmdroid-android:6.1.20")
+
+    // 高德官方 3D 地图 SDK（绝对可靠的国内地图），使用 Maven 依赖
+    // 如无 Key 会自动回退到 osmdroid
     implementation("com.amap.api:3dmap:latest.integration")
-    // 说明：3dmap 已内含定位相关依赖，避免重复引入导致类冲突，故不再单独依赖 location。
 }
