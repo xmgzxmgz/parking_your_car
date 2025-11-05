@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,6 +27,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.rememberAsyncImagePainter
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationResult
 import com.xiamuguizhi.parking.data.ParkingDataStore
 import com.xiamuguizhi.parking.ui.theme.ParkingTheme
 import kotlinx.coroutines.CancellationException
@@ -35,6 +39,16 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.util.Locale
+import org.osmdroid.config.Configuration
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.MapEventsOverlay
+import org.osmdroid.events.MapEventsReceiver
+import androidx.compose.ui.viewinterop.AndroidView
+import android.location.Location
 
 /**
  * MainActivity
@@ -166,11 +180,7 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = { Text(text = "停车定位") },
-                navigationIcon = {
-                    if (record != null) {
-                        TextButton(onClick = clearRecord) { Text(text = "我已上车") }
-                    }
-                }
+                // 移除左上角“我已上车”
             )
         }
     ) { padding ->
@@ -181,11 +191,42 @@ fun MainScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            // 顶部展示地图
+            val currentLocationState = remember { mutableStateOf<Pair<Double, Double>?>(null) }
+            val context = LocalContext.current
+            LaunchedEffect(Unit) {
+                // 配置 osmdroid UserAgent
+                Configuration.getInstance().userAgentValue = context.packageName
+            }
+            LocationUpdates(currentLocationState)
+            ParkingMap(
+                current = currentLocationState.value,
+                parking = record?.let { it.lat to it.lon },
+                onSetParking = { lat, lon ->
+                    // 允许用户通过地图长按更新停车位置（仅在已有记录或输入后使用）
+                    if (record != null) {
+                        // 保持其他信息不变，仅更新经纬度
+                        scope.launch {
+                            val dataStore = ParkingDataStore(context)
+                            dataStore.saveRecord(
+                                lat = lat,
+                                lon = lon,
+                                floor = record.floor,
+                                spot = record.spot,
+                                address = record.address,
+                                timestamp = record.timestamp,
+                                photoUris = record.photoUris
+                            )
+                        }
+                    }
+                }
+            )
+
             if (record == null) {
                 var floor by remember { mutableStateOf<String?>(null) }
                 var spot by remember { mutableStateOf<String?>(null) }
 
-                Text(text = "您尚未标记停车位")
+                Text(text = "请先输入车位号，然后在下方拍照或进入下一步设置停车位置")
                 FloorSelector(selected = floor, onSelect = { floor = it })
                 OutlinedTextField(
                     value = spot ?: "",
@@ -201,31 +242,52 @@ fun MainScreen(
                     ))
                     requestLocationAndSave(floor, spot)
                 }) {
-                    Text("标记停车位")
+                    Text("保存并进入详情")
                 }
             } else {
                 // 展示记录信息
                 Text(text = "记录时间：${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(java.util.Date(record.timestamp))}")
-                Text(text = "纬度：${record.lat}")
-                Text(text = "经度：${record.lon}")
-                record.address?.takeIf { it.isNotBlank() }?.let { Text(text = "地址：$it") }
-                record.floor?.takeIf { it.isNotBlank() }?.let { Text(text = "楼层：$it") }
                 record.spot?.takeIf { it.isNotBlank() }?.let { Text(text = "车位号：$it") }
+                // 仅显示经纬度，不再展示逆地理地址
+                Text(text = "停车位置：${record.lat}, ${record.lon}")
+                // 实时距离（米）
+                val cur = currentLocationState.value
+                val distanceMeters = remember(cur, record) {
+                    cur?.let { d ->
+                        haversineDistanceMeters(d.first, d.second, record.lat, record.lon)
+                    }
+                }
+                distanceMeters?.let { Text(text = "与停车位置距离：${"%.1f".format(it)} 米") }
 
                 // 照片区域
                 Text(text = "已添加的照片：")
                 if (record.photoUris.isEmpty()) {
                     Text(text = "暂无照片")
                 } else {
+                    var previewUri by remember { mutableStateOf<String?>(null) }
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(record.photoUris) { uri ->
                             Image(
                                 painter = rememberAsyncImagePainter(model = uri),
                                 contentDescription = null,
-                                modifier = Modifier.size(100.dp),
+                                modifier = Modifier.size(100.dp).clickable { previewUri = uri },
                                 contentScale = ContentScale.Crop
                             )
                         }
+                    }
+                    if (previewUri != null) {
+                        AlertDialog(
+                            onDismissRequest = { previewUri = null },
+                            confirmButton = { TextButton(onClick = { previewUri = null }) { Text("关闭") } },
+                            text = {
+                                Image(
+                                    painter = rememberAsyncImagePainter(model = previewUri),
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxWidth().height(300.dp),
+                                    contentScale = ContentScale.Fit
+                                )
+                            }
+                        )
                     }
                 }
 
@@ -268,4 +330,118 @@ fun FloorSelector(selected: String?, onSelect: (String?) -> Unit) {
             )
         }
     }
+}
+/**
+ * LocationUpdates
+ * 用途：开启 FusedLocationProvider 实时更新，将当前经纬度写入状态。
+ * 参数：state 当前经纬度的状态容器
+ * 返回值：无。
+ */
+@Composable
+private fun LocationUpdates(state: MutableState<Pair<Double, Double>?>) {
+    val context = LocalContext.current
+    DisposableEffect(Unit) {
+        val client = LocationServices.getFusedLocationProviderClient(context)
+        val request = LocationRequest.Builder(5000)
+            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .build()
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(locationResult: LocationResult) {
+                val loc = locationResult.lastLocation
+                if (loc != null) {
+                    state.value = loc.latitude to loc.longitude
+                }
+            }
+        }
+        try {
+            client.requestLocationUpdates(request, callback, context.mainLooper)
+        } catch (e: SecurityException) {
+            // 未授权定位权限时忽略
+        }
+        onDispose {
+            client.removeLocationUpdates(callback)
+        }
+    }
+}
+
+/**
+ * ParkingMap
+ * 用途：展示地图，标记当前位置与停车位置；支持长按设置停车位置。
+ * 参数：
+ *  - current 当前经纬度
+ *  - parking 停车经纬度（可空）
+ *  - onSetParking 长按地图设置停车点回调
+ */
+@Composable
+fun ParkingMap(
+    current: Pair<Double, Double>?,
+    parking: Pair<Double, Double>?,
+    onSetParking: (Double, Double) -> Unit
+) {
+    val context = LocalContext.current
+    AndroidView(
+        modifier = Modifier.fillMaxWidth().height(240.dp),
+        factory = { ctx ->
+            val map = MapView(ctx)
+            Configuration.getInstance().userAgentValue = ctx.packageName
+            map.setTileSource(TileSourceFactory.MAPNIK)
+            map.controller.setZoom(17.0)
+
+            // 事件接收：长按设置停车位置
+            val receiver = object : MapEventsReceiver {
+                override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean = false
+                override fun longPressHelper(p: GeoPoint?): Boolean {
+                    if (p != null) onSetParking(p.latitude, p.longitude)
+                    return true
+                }
+            }
+            map.overlays.add(MapEventsOverlay(receiver))
+            map
+        },
+        update = { map ->
+            // 清除旧覆盖物（保留事件 overlay 在[0]位置）
+            while (map.overlays.size > 1) map.overlays.removeAt(1)
+            var center: GeoPoint? = null
+            current?.let { (lat, lon) ->
+                val gp = GeoPoint(lat, lon)
+                val marker = Marker(map).apply {
+                    position = gp
+                    title = "当前位置"
+                }
+                map.overlays.add(marker)
+                center = gp
+            }
+            parking?.let { (lat, lon) ->
+                val gp = GeoPoint(lat, lon)
+                val marker = Marker(map).apply {
+                    position = gp
+                    title = "停车位置"
+                }
+                map.overlays.add(marker)
+                // 连接线
+                val line = Polyline().apply {
+                    addPoint(center ?: gp)
+                    addPoint(gp)
+                }
+                map.overlays.add(line)
+            }
+            center?.let { map.controller.setCenter(it) }
+            map.invalidate()
+        }
+    )
+}
+
+/**
+ * haversineDistanceMeters
+ * 用途：计算两个经纬度之间的球面距离（单位：米）。
+ */
+private fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+    val R = 6371000.0
+    val dLat = Math.toRadians(lat2 - lat1)
+    val dLon = Math.toRadians(lon2 - lon1)
+    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
+            kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
+    val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
+    return R * c
 }
