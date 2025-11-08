@@ -71,6 +71,7 @@ import com.amap.api.maps.MapView as AMapView
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.PolylineOptions
+import com.xiamuguizhi.parking.ar.ARFindCarScreen
 
 /**
  * MainActivity
@@ -177,6 +178,7 @@ fun MainScreen(
     clearRecord: () -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    var showAR by remember { mutableStateOf(false) }
 
     // 权限请求器
     val requestPermissions = rememberLauncherForActivityResult(
@@ -358,10 +360,33 @@ fun MainScreen(
                             takePictureLauncher.launch(newUri)
                         }
                     }) { Text("拍摄照片") }
+
+                    TextButton(onClick = { showAR = true }) { Text("进入AR寻车") }
                 }
 
                 Button(onClick = { clearRecord() }, modifier = Modifier.fillMaxWidth()) {
                     Text("我已上车（清除记录）")
+                }
+
+                if (showAR) {
+                    Dialog(onDismissRequest = { showAR = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                        Box(Modifier.fillMaxSize()) {
+                            ARFindCarScreen(
+                                parking = record.let { it.lat to it.lon },
+                                currentProvider = {
+                                    try {
+                                        val client = LocationServices.getFusedLocationProviderClient(context)
+                                        val loc = client.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null).await()
+                                        if (loc != null) loc.latitude to loc.longitude else null
+                                    } catch (e: Exception) { null }
+                                }
+                            )
+                            TextButton(
+                                onClick = { showAR = false },
+                                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
+                            ) { Text("关闭") }
+                        }
+                    }
                 }
             }
             }

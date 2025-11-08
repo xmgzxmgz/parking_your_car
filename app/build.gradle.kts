@@ -94,4 +94,10 @@ dependencies {
     // 高德官方 3D 地图 SDK（绝对可靠的国内地图），使用 Maven 依赖
     // 如无 Key 会自动回退到 osmdroid
     implementation("com.amap.api:3dmap:latest.integration")
+
+    // CameraX 用于 AR 摄像头预览
+    implementation("androidx.camera:camera-core:1.3.4")
+    implementation("androidx.camera:camera-camera2:1.3.4")
+    implementation("androidx.camera:camera-lifecycle:1.3.4")
+    implementation("androidx.camera:camera-view:1.3.0")
 }
