@@ -17,11 +17,12 @@ import com.xiamuguizhi.parking.util.SunriseSunset
  * 返回值：无，应用 Material3 主题包裹内容。
  */
 @Composable
-fun ParkingTheme(latitude: Double?, longitude: Double?, content: @Composable () -> Unit) {
+fun ParkingTheme(latitude: Double?, longitude: Double?, overrideDark: Boolean? = null, content: @Composable () -> Unit) {
     val lightColors = lightColorScheme()
     val darkColors = darkColorScheme()
 
     val useDark = when {
+        overrideDark != null -> overrideDark
         latitude != null && longitude != null -> {
             val now = System.currentTimeMillis()
             val sun = SunriseSunset.computeToday(latitude, longitude)

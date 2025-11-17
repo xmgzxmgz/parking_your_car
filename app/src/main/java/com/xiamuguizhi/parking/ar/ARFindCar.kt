@@ -38,6 +38,7 @@ import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import com.xiamuguizhi.parking.util.GeoMath
 
 /**
  * ARFindCarScreen
@@ -90,7 +91,7 @@ fun ARFindCarScreen(
         while (true) {
             val cur = currentProvider()
             if (parking != null && cur != null) {
-                val d = haversineDistanceMeters(cur.first, cur.second, parking.first, parking.second)
+                val d = GeoMath.haversineDistanceMeters(cur.first, cur.second, parking.first, parking.second)
                 distanceMeters = d
                 val bearing = bearingDegrees(cur.first, cur.second, parking.first, parking.second)
                 val rel = normalizeAngleDegrees((bearing - headingDegrees).toFloat())

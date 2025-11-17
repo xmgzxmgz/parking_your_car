@@ -72,6 +72,7 @@ import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MarkerOptions
 import com.amap.api.maps.model.PolylineOptions
 import com.xiamuguizhi.parking.ar.ARFindCarScreen
+import com.xiamuguizhi.parking.util.GeoMath
 
 /**
  * MainActivity
@@ -92,9 +93,11 @@ class MainActivity : ComponentActivity() {
             // 主题基于定位（若有）自动切换
             val themeLat = record?.lat
             val themeLon = record?.lon
+            var themeOverride by remember { mutableStateOf<Boolean?>(null) }
 
-            ParkingTheme(latitude = themeLat, longitude = themeLon) {
+            ParkingTheme(latitude = themeLat, longitude = themeLon, overrideDark = themeOverride) {
                 MainScreen(
+                    dataStore = dataStore,
                     record = record,
                     requestLocationAndSave = { floor, spot ->
                         scope.launch {
@@ -157,6 +160,35 @@ class MainActivity : ComponentActivity() {
             null
         }
     }
+
+    /**
+     * 打开外部地图进行导航（geo: URI），若无可用应用则无动作。
+     */
+    private fun navigateExternal(lat: Double, lon: Double) {
+        try {
+            val uri = Uri.parse("geo:$lat,$lon?q=$lat,$lon(停车位置)")
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, uri)
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * 分享停车信息到其它应用
+     */
+    private fun shareParking(record: ParkingDataStore.ParkingRecord) {
+        val text = buildString {
+            append("停车位置：${record.lat}, ${record.lon}\n")
+            record.spot?.takeIf { it.isNotBlank() }?.let { append("车位号：$it\n") }
+            record.floor?.takeIf { it.isNotBlank() }?.let { append("楼层：$it\n") }
+            record.address?.takeIf { it.isNotBlank() }?.let { append("地址：$it\n") }
+        }
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_TEXT, text)
+        }
+        startActivity(android.content.Intent.createChooser(intent, "分享停车信息"))
+    }
 }
 
 /**
@@ -172,6 +204,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    dataStore: ParkingDataStore,
     record: ParkingDataStore.ParkingRecord?,
     requestLocationAndSave: (String?, String?) -> Unit,
     appendPhoto: (Uri) -> Unit,
@@ -179,17 +212,47 @@ fun MainScreen(
 ) {
     val scope = rememberCoroutineScope()
     var showAR by remember { mutableStateOf(false) }
+    var showReminder by remember { mutableStateOf(false) }
 
     // 权限请求器
+    val snackbarHostState = remember { SnackbarHostState() }
+    var permissionsGranted by remember { mutableStateOf(false) }
     val requestPermissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { }
+    ) { result ->
+        permissionsGranted = listOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.CAMERA
+        ).all { p -> result[p] == true }
+        if (!permissionsGranted) {
+            scope.launch {
+                snackbarHostState.showSnackbar(stringResource(id = R.string.snack_perm_denied))
+            }
+        }
+    }
 
     // 拍照：使用 MediaStore 创建图片并拍摄
     val context = LocalContext.current
     var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
     val takePictureLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) pendingPhotoUri?.let { appendPhoto(it) }
+    }
+    // 导入 JSON 文件
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                try {
+                    val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                    if (!text.isNullOrBlank()) {
+                        dataStore.importJson(text)
+                        snackbarHostState.showSnackbar("导入成功")
+                    }
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("导入失败")
+                }
+            }
+        }
     }
 
     val createImageUri: () -> Uri? = {
@@ -203,14 +266,33 @@ fun MainScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = "停车定位") },
+                title = { Text(text = stringResource(id = R.string.title_main)) },
                 navigationIcon = {
                     if (record != null) {
-                        TextButton(onClick = clearRecord) { Text(text = "我已上车") }
+                        TextButton(onClick = clearRecord) { Text(text = stringResource(id = R.string.action_clear)) }
+                    }
+                }
+                , actions = {
+                    // 简单主题切换：跟随系统/浅色/深色 循环
+                    TextButton(onClick = {
+                        themeOverride = when (themeOverride) {
+                            null -> false
+                            false -> true
+                            true -> null
+                        }
+                    }) {
+                        Text(
+                            when (themeOverride) {
+                                null -> stringResource(id = R.string.theme_system)
+                                false -> stringResource(id = R.string.theme_light)
+                                true -> stringResource(id = R.string.theme_dark)
+                            }
+                        )
                     }
                 }
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
         // 全局状态：当前定位，供列表中多个项使用
         val currentLocationState = remember { mutableStateOf<Pair<Double, Double>?>(null) }
@@ -265,12 +347,12 @@ fun MainScreen(
 
                 Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text(text = "请先输入车位号，然后在下方拍照或进入下一步设置停车位置")
+                        Text(text = stringResource(id = R.string.hint_spot_first))
                         FloorSelector(selected = floor, onSelect = { floor = it })
                         OutlinedTextField(
                             value = spot ?: "",
                             onValueChange = { spot = it },
-                            label = { Text("车位号") }
+                            label = { Text(stringResource(id = R.string.spot_label)) }
                         )
                         Button(onClick = {
                             // 请求定位与摄像头权限
@@ -279,9 +361,13 @@ fun MainScreen(
                                 Manifest.permission.ACCESS_COARSE_LOCATION,
                                 Manifest.permission.CAMERA
                             ))
-                            requestLocationAndSave(floor, spot)
+                            if (permissionsGranted) {
+                                requestLocationAndSave(floor, spot)
+                            } else {
+                                scope.launch { snackbarHostState.showSnackbar(stringResource(id = R.string.snack_perm_needed)) }
+                            }
                         }, modifier = Modifier.fillMaxWidth()) {
-                            Text("保存并进入详情")
+                            Text(stringResource(id = R.string.action_save_detail))
                         }
                     }
                 }
@@ -289,26 +375,26 @@ fun MainScreen(
                 // 展示记录信息（卡片）
                 Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(text = "记录时间：${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(java.util.Date(record.timestamp))}")
+                        Text(text = "${stringResource(id = R.string.saved_at)}：${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(java.util.Date(record.timestamp))}")
                         record.spot?.takeIf { it.isNotBlank() }?.let { Text(text = "车位号：$it") }
                         Text(text = "停车位置：${record.lat}, ${record.lon}")
                         // 实时距离（米）
                         val cur = currentLocationState.value
                         val distanceMeters = remember(cur, record) {
-                            cur?.let { d -> haversineDistanceMeters(d.first, d.second, record.lat, record.lon) }
+                            cur?.let { d -> GeoMath.haversineDistanceMeters(d.first, d.second, record.lat, record.lon) }
                         }
-                        distanceMeters?.let { Text(text = "与停车位置距离：${"%.1f".format(it)} 米") }
+                        distanceMeters?.let { Text(text = "${stringResource(id = R.string.label_distance)}${"%.1f".format(it)} 米") }
 
                         // 方向提示：从当前位置前往停车位置应朝向
                         val directionText = remember(cur, record) {
-                            cur?.let { d -> bearingDirection(d.first, d.second, record.lat, record.lon) }
+                            cur?.let { d -> GeoMath.bearingDirection(d.first, d.second, record.lat, record.lon) }
                         }
-                        directionText?.let { Text(text = "前往停车位置方向：$it") }
+                        directionText?.let { Text(text = "${stringResource(id = R.string.label_direction)}$it") }
 
                         // 照片区域
-                        Text(text = "已添加的照片：")
+                        Text(text = stringResource(id = R.string.label_photos))
                         if (record.photoUris.isEmpty()) {
-                            Text(text = "暂无照片")
+                            Text(text = stringResource(id = R.string.label_no_photos))
                         } else {
                             var previewUri by remember { mutableStateOf<String?>(null) }
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -359,9 +445,63 @@ fun MainScreen(
                             pendingPhotoUri = newUri
                             takePictureLauncher.launch(newUri)
                         }
-                    }) { Text("拍摄照片") }
+                    }) { Text(stringResource(id = R.string.action_take_photo)) }
 
-                    TextButton(onClick = { showAR = true }) { Text("进入AR寻车") }
+                    TextButton(onClick = { showAR = true }) { Text(stringResource(id = R.string.action_enter_ar)) }
+
+                    // 外部导航
+                    TextButton(onClick = {
+                        record?.let { navigateExternal(it.lat, it.lon) }
+                    }) { Text(stringResource(id = R.string.action_open_nav)) }
+
+                    // 分享
+                    TextButton(onClick = {
+                        record?.let { (context as MainActivity).shareParking(it) }
+                    }) { Text(stringResource(id = R.string.action_share)) }
+
+                    // 导出
+                    TextButton(onClick = {
+                        scope.launch {
+                            val json = dataStore.exportJson()
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, json)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, stringResource(id = R.string.action_export_title)))
+                        }
+                    }) { Text(stringResource(id = R.string.action_export)) }
+
+                    // 导入
+                    TextButton(onClick = { importLauncher.launch("text/*") }) { Text(stringResource(id = R.string.action_import)) }
+
+                    // 计时提醒
+                    TextButton(onClick = { showReminder = true }) { Text(stringResource(id = R.string.action_set_reminder)) }
+
+                    // 历史记录
+                    var showHistory by remember { mutableStateOf(false) }
+                    TextButton(onClick = { showHistory = true }) { Text("历史记录") }
+                    if (showHistory) {
+                        Dialog(onDismissRequest = { showHistory = false }) {
+                            HistoryList(
+                                history = dataStore.historyFlow.collectAsState(initial = emptyList()).value,
+                                onUse = { rec ->
+                                    // 将选中历史设置为当前记录
+                                    scope.launch {
+                                        dataStore.saveRecord(
+                                            lat = rec.lat,
+                                            lon = rec.lon,
+                                            floor = rec.floor,
+                                            spot = rec.spot,
+                                            address = rec.address,
+                                            timestamp = System.currentTimeMillis(),
+                                            photoUris = rec.photoUris
+                                        )
+                                        showHistory = false
+                                    }
+                                }
+                            )
+                        }
+                    }
                 }
 
                 Button(onClick = { clearRecord() }, modifier = Modifier.fillMaxWidth()) {
@@ -384,7 +524,28 @@ fun MainScreen(
                             TextButton(
                                 onClick = { showAR = false },
                                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
-                            ) { Text("关闭") }
+                            ) { Text(stringResource(id = R.string.dialog_close)) }
+                        }
+                    }
+                }
+
+                if (showReminder) {
+                    Dialog(onDismissRequest = { showReminder = false }) {
+                        Card(shape = RoundedCornerShape(12.dp)) {
+                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text("选择提醒时间：")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(30, 60, 120).forEach { min ->
+                                        Button(onClick = {
+                                            record?.let {
+                                                scheduleReminder(context, min)
+                                                scope.launch { snackbarHostState.showSnackbar("已设置${min}分钟提醒") }
+                                            }
+                                            showReminder = false
+                                        }) { Text("${min}分钟") }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -412,6 +573,36 @@ fun FloorSelector(selected: String?, onSelect: (String?) -> Unit) {
                 onClick = { onSelect(if (selected == f) null else f) },
                 label = { Text(f) }
             )
+        }
+    }
+}
+
+/**
+ * HistoryList
+ * 用途：展示最近若干条历史记录，支持一键使用该记录。
+ * 参数：
+ *  - history 历史列表
+ *  - onUse 选择使用某条历史的回调
+ */
+@Composable
+fun HistoryList(history: List<ParkingDataStore.ParkingRecord>, onUse: (ParkingDataStore.ParkingRecord) -> Unit) {
+    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = stringResource(id = R.string.label_history_title))
+        androidx.compose.foundation.lazy.LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(history.size) { idx ->
+                val rec = history[idx]
+                Card(shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(text = "${java.text.SimpleDateFormat("MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(rec.timestamp))}")
+                        rec.spot?.takeIf { it.isNotBlank() }?.let { Text(text = "车位：$it") }
+                        rec.floor?.takeIf { it.isNotBlank() }?.let { Text(text = "楼层：$it") }
+                        Text(text = "坐标：${"%.5f".format(rec.lat)}, ${"%.5f".format(rec.lon)}")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { onUse(rec) }) { Text(stringResource(id = R.string.action_used_record)) }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -687,6 +878,24 @@ private fun getAmapApiKey(context: Context): String? {
     } catch (e: Exception) {
         null
     }
+}
+
+private fun scheduleReminder(context: Context, minutes: Int) {
+    try {
+        val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+        val intent = android.content.Intent(context, com.xiamuguizhi.parking.notify.ReminderReceiver::class.java).apply {
+            putExtra("title", "停车计时到期")
+            putExtra("text", "您设置的停车计时(${minutes}分钟)已到")
+        }
+        val pi = android.app.PendingIntent.getBroadcast(
+            context,
+            1001,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or (if (android.os.Build.VERSION.SDK_INT >= 23) android.app.PendingIntent.FLAG_IMMUTABLE else 0)
+        )
+        val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
+    } catch (_: Exception) {}
 }
 
 /**

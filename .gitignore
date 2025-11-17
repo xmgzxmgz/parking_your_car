@@ -1,1 +1,10 @@
 /.history
+/.gradle/
+/build/
+**/build/
+.idea/
+local.properties
+captures/
+*.iml
+*.apk
+*.aab
