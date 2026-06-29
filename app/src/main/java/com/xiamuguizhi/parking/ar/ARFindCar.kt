@@ -19,8 +19,6 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -28,16 +26,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlin.math.abs
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
 import com.xiamuguizhi.parking.util.GeoMath
 
 /**
@@ -93,8 +87,8 @@ fun ARFindCarScreen(
             if (parking != null && cur != null) {
                 val d = GeoMath.haversineDistanceMeters(cur.first, cur.second, parking.first, parking.second)
                 distanceMeters = d
-                val bearing = bearingDegrees(cur.first, cur.second, parking.first, parking.second)
-                val rel = normalizeAngleDegrees((bearing - headingDegrees).toFloat())
+                val bearing = GeoMath.bearingDegrees(cur.first, cur.second, parking.first, parking.second)
+                val rel = GeoMath.normalizeAngleDegrees((bearing - headingDegrees).toFloat())
                 relativeBearing = rel
             }
             delay(1000)
@@ -150,11 +144,13 @@ private fun CameraPreview(
                 val provider = ProcessCameraProvider.getInstance(ctx).get()
                 val selector = CameraSelector.Builder().requireLensFacing(lensFacing).build()
                 val builder = Preview.Builder()
-                // 通过 Camera2Interop 尝试将帧率固定到 60fps（机型不支持时自动降级）
-                Camera2Interop.Extender(builder).setCaptureRequestOption(
-                    android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
-                    if (Build.VERSION.SDK_INT >= 21) Range(60, 60) else Range(30, 30)
-                )
+                // 通过 Camera2Interop 尝试将帧率固定到 60fps（机型不支持时自动降级到默认帧率）
+                try {
+                    Camera2Interop.Extender(builder).setCaptureRequestOption(
+                        android.hardware.camera2.CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                        if (Build.VERSION.SDK_INT >= 21) Range(60, 60) else Range(30, 30)
+                    )
+                } catch (_: Exception) { /* 设备不支持该帧率配置，使用默认值 */ }
                 val preview = builder.build()
                 preview.setSurfaceProvider(previewView.surfaceProvider)
                 provider.unbindAll()
@@ -252,46 +248,3 @@ private fun directionArrow(rel: Float?): String {
     }
 }
 
-/**
- * bearingDegrees
- * 用途：计算从点 A 指向点 B 的方位角（0~360，0=北）。
- * 参数：
- *  - lat1/lon1 起点（WGS84）
- *  - lat2/lon2 终点（WGS84）
- * 返回：方位角（度）
- */
-private fun bearingDegrees(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Float {
-    val phi1 = Math.toRadians(lat1)
-    val phi2 = Math.toRadians(lat2)
-    val dl = Math.toRadians(lon2 - lon1)
-    val y = sin(dl) * cos(phi2)
-    val x = cos(phi1) * sin(phi2) - sin(phi1) * cos(phi2) * cos(dl)
-    var br = Math.toDegrees(atan2(y, x)).toFloat()
-    if (br < 0f) br += 360f
-    return br
-}
-
-/**
- * normalizeAngleDegrees
- * 用途：将角度归一化到 [-180, 180] 区间。
- */
-private fun normalizeAngleDegrees(a: Float): Float {
-    var v = ((a + 180f) % 360f)
-    if (v < 0f) v += 360f
-    return v - 180f
-}
-
-/**
- * haversineDistanceMeters
- * 用途：计算两点球面距离（米）。
- */
-private fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val R = 6371000.0
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-            kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
-            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-    val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
-    return R * c
-}

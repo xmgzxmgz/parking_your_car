@@ -676,7 +676,7 @@ fun ParkingMap(
                 aMap.uiSettings.isZoomControlsEnabled = true
                 aMap.moveCamera(CameraUpdateFactory.zoomTo(17f))
                 aMap.setOnMapLongClickListener { ll ->
-                    val (wLat, wLon) = gcj02ToWgs84(ll.latitude, ll.longitude)
+                    val (wLat, wLon) = GeoMath.gcj02ToWgs84(ll.latitude, ll.longitude)
                     onSetParking(wLat, wLon)
                 }
 
@@ -697,13 +697,13 @@ fun ParkingMap(
                 aMap.clear()
                 var center: LatLng? = null
                 current?.let { (lat, lon) ->
-                    val (gLat, gLon) = wgs84ToGcj02(lat, lon)
+                    val (gLat, gLon) = GeoMath.wgs84ToGcj02(lat, lon)
                     val ll = LatLng(gLat, gLon)
                     aMap.addMarker(MarkerOptions().position(ll).title("当前位置"))
                     center = ll
                 }
                 parking?.let { (lat, lon) ->
-                    val (gLat, gLon) = wgs84ToGcj02(lat, lon)
+                    val (gLat, gLon) = GeoMath.wgs84ToGcj02(lat, lon)
                     val ll = LatLng(gLat, gLon)
                     aMap.addMarker(MarkerOptions().position(ll).title("停车位置"))
                     center?.let { c -> aMap.addPolyline(PolylineOptions().add(c, ll)) }
@@ -743,7 +743,7 @@ fun ParkingMap(
                     override fun singleTapConfirmedHelper(p: GeoPoint?): Boolean = false
                     override fun longPressHelper(p: GeoPoint?): Boolean {
                         if (p != null) {
-                            val (wgsLat, wgsLon) = gcj02ToWgs84(p.latitude, p.longitude)
+                            val (wgsLat, wgsLon) = GeoMath.gcj02ToWgs84(p.latitude, p.longitude)
                             onSetParking(wgsLat, wgsLon)
                         }
                         return true
@@ -756,14 +756,14 @@ fun ParkingMap(
                 while (map.overlays.size > 1) map.overlays.removeAt(1)
                 var center: GeoPoint? = null
                 current?.let { (lat, lon) ->
-                    val (gcjLatCur, gcjLonCur) = wgs84ToGcj02(lat, lon)
+                    val (gcjLatCur, gcjLonCur) = GeoMath.wgs84ToGcj02(lat, lon)
                     val gp = GeoPoint(gcjLatCur, gcjLonCur)
                     val marker = Marker(map).apply { position = gp; title = "当前位置" }
                     map.overlays.add(marker)
                     center = gp
                 }
                 parking?.let { (lat, lon) ->
-                    val (gcjLatPk, gcjLonPk) = wgs84ToGcj02(lat, lon)
+                    val (gcjLatPk, gcjLonPk) = GeoMath.wgs84ToGcj02(lat, lon)
                     val gp = GeoPoint(gcjLatPk, gcjLonPk)
                     val marker = Marker(map).apply { position = gp; title = "停车位置" }
                     map.overlays.add(marker)
@@ -775,94 +775,6 @@ fun ParkingMap(
             }
         )
     }
-}
-
-/**
- * haversineDistanceMeters
- * 用途：计算两个经纬度之间的球面距离（单位：米）。
- */
-private fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-    val R = 6371000.0
-    val dLat = Math.toRadians(lat2 - lat1)
-    val dLon = Math.toRadians(lon2 - lon1)
-    val a = kotlin.math.sin(dLat / 2) * kotlin.math.sin(dLat / 2) +
-            kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
-            kotlin.math.sin(dLon / 2) * kotlin.math.sin(dLon / 2)
-    val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
-    return R * c
-}
-
-/**
- * 坐标系转换工具
- * 用途：在国内底图（GCJ-02/BD-09）与 GPS(WGS84)间相互转换，保证显示与计算一致。
- */
-private fun outOfChina(lat: Double, lon: Double): Boolean {
-    return lon !in 72.004..137.8347 || lat !in 0.8293..55.8271
-}
-
-private fun transformLat(x: Double, y: Double): Double {
-    var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * kotlin.math.sqrt(kotlin.math.abs(x))
-    ret += (20.0 * kotlin.math.sin(6.0 * x * Math.PI) + 20.0 * kotlin.math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
-    ret += (20.0 * kotlin.math.sin(y * Math.PI) + 40.0 * kotlin.math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0
-    ret += (160.0 * kotlin.math.sin(y / 12.0 * Math.PI) + 320.0 * kotlin.math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0
-    return ret
-}
-
-private fun transformLon(x: Double, y: Double): Double {
-    var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * kotlin.math.sqrt(kotlin.math.abs(x))
-    ret += (20.0 * kotlin.math.sin(6.0 * x * Math.PI) + 20.0 * kotlin.math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
-    ret += (20.0 * kotlin.math.sin(x * Math.PI) + 40.0 * kotlin.math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0
-    ret += (150.0 * kotlin.math.sin(x / 12.0 * Math.PI) + 300.0 * kotlin.math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
-    return ret
-}
-
-private fun wgs84ToGcj02(lat: Double, lon: Double): Pair<Double, Double> {
-    if (outOfChina(lat, lon)) return lat to lon
-    val a = 6378245.0
-    val ee = 0.00669342162296594323
-    var dLat = transformLat(lon - 105.0, lat - 35.0)
-    var dLon = transformLon(lon - 105.0, lat - 35.0)
-    val radLat = lat / 180.0 * Math.PI
-    var magic = kotlin.math.sin(radLat)
-    magic = 1 - ee * magic * magic
-    val sqrtMagic = kotlin.math.sqrt(magic)
-    dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI)
-    dLon = (dLon * 180.0) / (a / sqrtMagic * kotlin.math.cos(radLat) * Math.PI)
-    val mgLat = lat + dLat
-    val mgLon = lon + dLon
-    return mgLat to mgLon
-}
-
-private fun gcj02ToWgs84(lat: Double, lon: Double): Pair<Double, Double> {
-    if (outOfChina(lat, lon)) return lat to lon
-    val (gLat, gLon) = wgs84ToGcj02(lat, lon)
-    // 反推一阶近似
-    return (lat * 2 - gLat) to (lon * 2 - gLon)
-}
-
-private fun gcj02ToBd09(lat: Double, lon: Double): Pair<Double, Double> {
-    val x = lon
-    val y = lat
-    val z = kotlin.math.sqrt(x * x + y * y) + 0.00002 * kotlin.math.sin(y * Math.PI)
-    val theta = kotlin.math.atan2(y, x) + 0.000003 * kotlin.math.cos(x * Math.PI)
-    val bdLon = z * kotlin.math.cos(theta) + 0.0065
-    val bdLat = z * kotlin.math.sin(theta) + 0.006
-    return bdLat to bdLon
-}
-
-private fun bd09ToGcj02(lat: Double, lon: Double): Pair<Double, Double> {
-    val x = lon - 0.0065
-    val y = lat - 0.006
-    val z = kotlin.math.sqrt(x * x + y * y) - 0.00002 * kotlin.math.sin(y * Math.PI)
-    val theta = kotlin.math.atan2(y, x) - 0.000003 * kotlin.math.cos(x * Math.PI)
-    val ggLon = z * kotlin.math.cos(theta)
-    val ggLat = z * kotlin.math.sin(theta)
-    return ggLat to ggLon
-}
-
-private fun wgs84ToBd09(lat: Double, lon: Double): Pair<Double, Double> {
-    val (gLat, gLon) = wgs84ToGcj02(lat, lon)
-    return gcj02ToBd09(gLat, gLon)
 }
 
 /**
@@ -880,6 +792,12 @@ private fun getAmapApiKey(context: Context): String? {
     }
 }
 
+/**
+ * scheduleReminder
+ * 用途：通过 AlarmManager 设置精确计时提醒。
+ * @param context 应用上下文
+ * @param minutes 提醒时间（分钟）
+ */
 private fun scheduleReminder(context: Context, minutes: Int) {
     try {
         val triggerAt = System.currentTimeMillis() + minutes * 60_000L
@@ -887,36 +805,12 @@ private fun scheduleReminder(context: Context, minutes: Int) {
             putExtra("title", "停车计时到期")
             putExtra("text", "您设置的停车计时(${minutes}分钟)已到")
         }
-        val pi = android.app.PendingIntent.getBroadcast(
-            context,
-            1001,
-            intent,
-            android.app.PendingIntent.FLAG_UPDATE_CURRENT or (if (android.os.Build.VERSION.SDK_INT >= 23) android.app.PendingIntent.FLAG_IMMUTABLE else 0)
-        )
+        val flags = android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                (if (android.os.Build.VERSION.SDK_INT >= 23) android.app.PendingIntent.FLAG_IMMUTABLE else 0)
+        val pi = android.app.PendingIntent.getBroadcast(context, 1001, intent, flags)
         val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
         am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAt, pi)
-    } catch (_: Exception) {}
-}
-
-/**
- * bearingDirection
- * 用途：根据两点的 WGS84 坐标计算从起点指向终点的初始方位角，并映射为中文方向（八方位：北、东北、东、东南、南、西南、西、西北）。
- * 参数：
- *  - lat1 起点纬度
- *  - lon1 起点经度
- *  - lat2 终点纬度
- *  - lon2 终点经度
- * 返回值：中文方向字符串，例如 "北"、"东北"。
- */
-private fun bearingDirection(lat1: Double, lon1: Double, lat2: Double, lon2: Double): String {
-    val phi1 = Math.toRadians(lat1)
-    val phi2 = Math.toRadians(lat2)
-    val dLambda = Math.toRadians(lon2 - lon1)
-    val y = Math.sin(dLambda) * Math.cos(phi2)
-    val x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda)
-    var theta = Math.toDegrees(Math.atan2(y, x))
-    if (theta < 0) theta += 360.0
-    val dirs = arrayOf("北", "东北", "东", "东南", "南", "西南", "西", "西北")
-    val idx = ((theta + 22.5) / 45.0).toInt() % 8
-    return dirs[idx]
+    } catch (_: Exception) {
+        // AlarmManager 不可用时静默失败
+    }
 }

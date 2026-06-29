@@ -31,7 +31,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -91,9 +92,8 @@ dependencies {
     // OpenStreetMap (osmdroid) 地图，无需 API Key
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 
-    // 高德官方 3D 地图 SDK（绝对可靠的国内地图），使用 Maven 依赖
-    // 如无 Key 会自动回退到 osmdroid
-    implementation("com.amap.api:3dmap:latest.integration")
+    // 高德官方 3D 地图 SDK（国内地图），无 Key 时自动回退到 osmdroid
+    implementation("com.amap.api:3dmap:10.0.600")
 
     // CameraX 用于 AR 摄像头预览
     implementation("androidx.camera:camera-core:1.3.4")

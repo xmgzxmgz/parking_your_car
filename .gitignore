@@ -1,37 +1,38 @@
-# Build
+# Build outputs
 *.iml
-.gradle/
-/local.properties
-/.idea/
-.DS_Store
-/build/
-/app/build/
-/captures
-.externalNativeBuild/
-.cxx/
 *.apk
 *.ap_
 *.aab
 *.dex
 *.class
 *.log
-*.keystore
-*.jks
-
-# Android
-/google-services.json
-
-# IDE
-.idea/
-*.iml
-.navigation/
-captures/
-output.json
+build/
+app/build/
 
 # Gradle
 .gradle/
-build/
+gradle-app.setting
+!gradle-wrapper.jar
 
-# Signing
+# Android SDK / local config
+/local.properties
+
+# IDE
+.idea/
+.navigation/
+captures/
+output.json
+.externalNativeBuild/
+.cxx/
+
+# Signing (keep debug keystore)
 *.keystore
+*.jks
 !debug.keystore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Google services
+/google-services.json
