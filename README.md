@@ -1,3 +1,9 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-2bbc8a.svg)](LICENSE)
+![Kotlin](https://img.shields.io/badge/Kotlin-7F52FF?logo=kotlin&logoColor=white)
+![Android](https://img.shields.io/badge/Android-3DDC84?logo=android&logoColor=white)
+![Stars](https://img.shields.io/github/stars/xmgzxmgz/parking_your_car?style=social)
+![Last Commit](https://img.shields.io/github/last-commit/xmgzxmgz/parking_your_car)
+
 # Parking Your Car / 停车定位
 
 Android 停车位置记录与 AR 寻车应用，使用 Kotlin + Jetpack Compose 构建。
